@@ -30,6 +30,7 @@ module Deltacloud
           running.to( :stopping )       .on( :stop )
           running.to( :finish )         .on( :destroy )
           stopped.to( :running )        .on( :start )
+          stopped.to( :finish)          .on( :destroy )
           stopping.to( :stopped )       .automatically
           stopped.to( :finish )         .automatically
           error.from(:running, :pending, :stopping)
@@ -67,14 +68,15 @@ module Deltacloud
 
         def realms(credentials, opts={})
           safely do
-            new_client(credentials).get('regions')['regions'].map do |r|
+            realms = new_client(credentials).get('regions')['regions'].map do |r|
               Realm.new(
-                :id => r['id'],
+                :id => r['id'].to_s,
                 :name => r['name'],
                 :state => 'AVAILABLE',
                 :limit => :unlimited
               )
             end
+            filter_on(realms, opts, :id)
           end
         end
 
@@ -133,9 +135,15 @@ module Deltacloud
           safely do
             client = new_client(credentials)
             args = { :image_id => image_id }
-            args.merge!(:region_id => opts[:realm_id]) if opts[:realm_id]
-            args.merge!(:size_id => opts[:hwp_id]) if opts[:hwp_id]
-            args.merge!(:name => opts[:name] || "inst#{Time.now.to_i}")
+            # Defaults to first realm if realm_id not set
+            opts[:realm_id] ||= '1'
+            args.merge!(:region_id => opts[:realm_id])
+            # Defaults to first size if hwp_id not set
+            opts[:hwp_id] ||= '66'
+            args.merge!(:size_id => opts[:hwp_id])
+            # Default to 'inst-timestamp if name is not set'
+            opts[:name] ||= "inst-#{Time.now.to_i}"
+            args.merge!(:name => opts[:name])
             args.merge!(:ssh_key_ids => opts[:keyname]) if opts[:keyname]
             convert_instance(
               credentials.user,
